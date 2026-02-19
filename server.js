@@ -9,7 +9,7 @@
 require('dotenv').config();
 const express   = require('express');
 const cors      = require('cors');
-const OpenAI    = require('openai');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const TelegramBot = require('node-telegram-bot-api');
 const Database  = require('better-sqlite3');
 const axios     = require('axios');
@@ -22,7 +22,8 @@ app.use(express.json());
 // ─────────────────────────────────────────────
 // INITIALIZATION
 // ─────────────────────────────────────────────
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 const redis  = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const db     = new Database('./assistant.db');
 
@@ -92,12 +93,12 @@ async function syncWordPressPosts() {
         const slug     = p.slug;
 
         // Generate embedding for semantic search
-        const embedding = await generateEmbedding(`${p.title.rendered} ${excerpt}`);
 
-        db.prepare(`
-          INSERT OR REPLACE INTO posts (id, title, slug, excerpt, content, category, tags, embedding, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        `).run(p.id, p.title.rendered, slug, excerpt, '', category, tags, JSON.stringify(embedding));
+       db.prepare(`
+  INSERT OR REPLACE INTO posts (id, title, slug, excerpt, content, category, tags, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+`).run(p.id, p.title.rendered, slug, excerpt, '', category, tags);
+
 
         imported++;
       }
@@ -110,20 +111,26 @@ async function syncWordPressPosts() {
 }
 
 // ─────────────────────────────────────────────
-// EMBEDDING GENERATION (OpenAI text-embedding-3-small)
+// EMBEDDING GENERATION (Gemini text-embedding-3-small)
 // ─────────────────────────────────────────────
-async function generateEmbedding(text) {
-  const cacheKey = `emb:${Buffer.from(text).toString('base64').slice(0, 64)}`;
-  const cached   = await redis.get(cacheKey);
+async function semanticSearch(query, limit = 5) {
+  const cacheKey = `search:${query.toLowerCase().replace(/\s+/g, '_').slice(0, 80)}`;
+  const cached = await redis.get(cacheKey);
   if (cached) return JSON.parse(cached);
 
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: text.slice(0, 2000)
-  });
-  const embedding = response.data[0].embedding;
-  await redis.setex(cacheKey, 86400, JSON.stringify(embedding)); // cache 24h
-  return embedding;
+  const posts = db.prepare('SELECT * FROM posts').all();
+
+  const scored = posts
+    .map(post => {
+      const text = (post.title + " " + post.excerpt).toLowerCase();
+      const score = text.includes(query.toLowerCase()) ? 0.9 : 0.3;
+      return { ...post, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  await redis.setex(cacheKey, 3600, JSON.stringify(scored));
+  return scored;
 }
 
 // ─────────────────────────────────────────────
@@ -172,27 +179,20 @@ async function semanticSearch(query, limit = 5) {
 async function generateAnswer(query, matchedPosts) {
   const context = matchedPosts.slice(0, 3).map(p =>
     `Article: "${p.title}"\nExcerpt: ${p.excerpt}`
-  ).join('\n\n---\n\n');
+  ).join('\n\n');
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    max_tokens: 180,
-    temperature: 0.4,
-    messages: [
-      {
-        role: 'system',
-        content: `You are a helpful assistant for a website. Answer the user's question concisely (2-3 sentences max) based on the provided article excerpts. Always encourage the user to read the linked articles for full details. Be friendly and direct.`
-      },
-      {
-        role: 'user',
-        content: `User question: "${query}"\n\nRelevant content:\n${context || 'No exact match found, suggest exploring related content.'}`
-      }
-    ]
-  });
+  const prompt = `
+User question: ${query}
 
-  return completion.choices[0].message.content;
+Relevant content:
+${context || "No exact match"}
+
+Give short helpful answer and encourage reading articles.
+`;
+
+  const result = await geminiModel.generateContent(prompt);
+  return result.response.text();
 }
-
 // ─────────────────────────────────────────────
 // API ROUTES
 // ─────────────────────────────────────────────
@@ -352,3 +352,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+[root@ip-172-31-9-156 topcashbackcard]#
