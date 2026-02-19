@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Assistant Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a12; --surface: #12121e; --surface2: #1c1c2e;
+    --border: #2a2a40; --accent: #6c63ff; --text: #e0e0f0;
+    --muted: #606080; --success: #4ade80; --warn: #fbbf24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 220px;
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 24px 16px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .logo { font-size: 18px; font-weight: 700; padding: 0 10px 20px; color: var(--accent); }
+  .nav-item {
+    padding: 10px 14px; border-radius: 10px; cursor: pointer;
+    font-size: 14px; color: var(--muted); transition: all 0.2s; display: flex; align-items: center; gap: 10px;
+  }
+  .nav-item:hover, .nav-item.active { background: rgba(108,99,255,0.12); color: var(--text); }
+
+  .main { margin-left: 220px; padding: 32px; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-value { font-size: 28px; font-weight: 700; font-family: 'DM Mono', monospace; }
+  .stat-change { font-size: 12px; color: var(--success); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  td { padding: 12px; font-size: 14px; border-bottom: 1px solid rgba(42,42,64,0.5); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-family: 'DM Mono', monospace;
+  }
+  .badge.high { background: rgba(108,99,255,0.2); color: var(--accent); }
+  .badge.med  { background: rgba(251,191,36,0.15); color: var(--warn); }
+  .badge.low  { background: rgba(96,96,128,0.2);   color: var(--muted); }
+
+  .input-row { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+  input, select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; color: var(--text); font-size: 14px; font-family: 'DM Sans', sans-serif; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+
+  .btn {
+    padding: 10px 20px; border-radius: 10px; border: none; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #5b52e0; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+  .priority-slider {
+    -webkit-appearance: none; width: 80px; height: 4px;
+    background: var(--border); border-radius: 4px; outline: none;
+  }
+  .priority-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    background: var(--accent); border-radius: 50%; cursor: pointer;
+  }
+
+  .tg-panel {
+    background: linear-gradient(135deg, rgba(0,136,204,0.1), rgba(0,136,204,0.05));
+    border: 1px solid rgba(0,136,204,0.3); border-radius: 14px; padding: 20px;
+  }
+  .tg-panel h3 { color: #29b6f6; }
+
+  .bar-chart { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 12px; }
+  .bar-label { width: 160px; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 1s ease; }
+  .bar-count { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--muted); width: 30px; text-align: right; }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main { margin-left: 0; padding: 20px; }
+    .stats-row { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="logo">🤖 AI Admin</div>
+  <div class="nav-item active" onclick="showPage('dashboard', this)">📊 Dashboard</div>
+  <div class="nav-item" onclick="showPage('queries', this)">🔍 Top Queries</div>
+  <div class="nav-item" onclick="showPage('posts', this)">📄 Post Priority</div>
+  <div class="nav-item" onclick="showPage('telegram', this)">📱 Telegram Bot</div>
+  <div class="nav-item" onclick="showPage('settings', this)">⚙️ Settings</div>
+</div>
+
+<div class="main">
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <h1>Dashboard</h1>
+    <p class="subtitle">AI Assistant performance overview</p>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Total Queries</div>
+        <div class="stat-value" id="stat-queries">1,284</div>
+        <div class="stat-change">↑ 18% this week</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Match Score</div>
+        <div class="stat-value" id="stat-score">78%</div>
+        <div class="stat-change">↑ 5% vs last week</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Posts Indexed</div>
+        <div class="stat-value" id="stat-posts">142</div>
+        <div class="stat-change">Last sync: 2h ago</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Telegram Notifs</div>
+        <div class="stat-value" id="stat-tg">1,284</div>
+        <div class="stat-change">100% forwarded</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Top Searched Topics (Last 7 Days)</h3>
+      <div class="bar-chart" id="bar-chart"></div>
+    </div>
+
+    <div class="card">
+      <h3>Zero-Result Queries (Needs Content)</h3>
+      <table>
+        <thead><tr><th>Query</th><th>Times Asked</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td>"how to set up cloudflare"</td><td>23</td><td><button class="btn btn-outline" style="padding:4px 12px;font-size:12px">Create Post</button></td></tr>
+          <tr><td>"wordpress backup plugins"</td><td>17</td><td><button class="btn btn-outline" style="padding:4px 12px;font-size:12px">Create Post</button></td></tr>
+          <tr><td>"how to monetize with ads"</td><td>11</td><td><button class="btn btn-outline" style="padding:4px 12px;font-size:12px">Create Post</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TOP QUERIES -->
+  <div class="page" id="page-queries">
+    <h1>Top Queries</h1>
+    <p class="subtitle">Most frequently asked questions in the AI modal</p>
+    <div class="card">
+      <div class="input-row">
+        <input type="text" placeholder="Filter queries..." style="flex:1" oninput="filterTable(this)">
+        <button class="btn btn-primary" onclick="loadQueries()">Refresh</button>
+        <button class="btn btn-outline" onclick="exportCSV()">Export CSV</button>
+      </div>
+      <table id="queries-table">
+        <thead>
+          <tr><th>#</th><th>Query</th><th>Count</th><th>Volume</th><th>Last Asked</th></tr>
+        </thead>
+        <tbody id="queries-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- POST PRIORITY -->
+  <div class="page" id="page-posts">
+    <h1>Post Priority</h1>
+    <p class="subtitle">Boost specific posts to appear higher in AI suggestions</p>
+    <div class="card">
+      <div class="input-row">
+        <input type="text" placeholder="Search posts..." style="flex:1">
+        <button class="btn btn-primary" onclick="syncPosts()">🔄 Sync WordPress</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Title</th><th>Category</th><th>Priority Boost</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="posts-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TELEGRAM -->
+  <div class="page" id="page-telegram">
+    <h1>Telegram Bot</h1>
+    <p class="subtitle">Manage bot commands and broadcast messages</p>
+
+    <div class="tg-panel" style="margin-bottom:20px">
+      <h3 style="margin-bottom:12px">📱 Bot Status</h3>
+      <p style="font-size:14px;color:#e0e0f0;margin-bottom:12px">Your Telegram bot is <strong style="color:#4ade80">active</strong> and polling for messages.</p>
+      <div style="font-size:13px;color:#7070a0">
+        Commands: <code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px">/ask</code>
+        <code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px">/trending</code>
+        <code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px">/broadcast</code>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Send Broadcast</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Push a message to all subscribers or your Telegram channel</p>
+      <textarea id="broadcast-msg" style="width:100%;height:100px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;resize:vertical;outline:none" placeholder="Write your broadcast message..."></textarea>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn btn-primary" onclick="sendBroadcast()">Send to Channel</button>
+        <button class="btn btn-outline" onclick="sendBroadcast(true)">Send to Admin Only (Test)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Push Trending Articles</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Automatically send top posts to your Telegram channel</p>
+      <div class="input-row">
+        <select>
+          <option>Daily at 9:00 AM</option>
+          <option>Weekly on Monday</option>
+          <option>Manual only</option>
+        </select>
+        <button class="btn btn-primary">Save Schedule</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="page" id="page-settings">
+    <h1>Settings</h1>
+    <p class="subtitle">Configure your AI assistant</p>
+    <div class="card">
+      <h3>API Configuration</h3>
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:4px">
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">OpenAI API Key</label>
+          <input type="password" value="sk-•••••••••••••••••••" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">WordPress REST Base URL</label>
+          <input type="text" value="https://yoursite.com/wp-json/wp/v2" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Telegram Bot Token</label>
+          <input type="password" value="1234567890:AAAA••••••••••••" style="width:100%">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:6px">Admin API Key</label>
+          <input type="password" value="your-admin-key-here" style="width:100%">
+        </div>
+        <button class="btn btn-primary" style="width:140px">Save Settings</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Embed Code</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Copy this snippet into your WordPress theme's footer.php or use a plugin like "Header Footer Code Manager":</p>
+      <pre style="background:var(--surface2);padding:16px;border-radius:10px;font-size:12px;overflow-x:auto;color:#a0a0d0;font-family:'DM Mono',monospace">&lt;!-- AI Assistant Modal --&gt;
+&lt;script&gt;
+  window.AIAssistantConfig = {
+    apiEndpoint: 'https://yourdomain.com/api/ai-search',
+    siteUrl: 'https://yourdomain.com'
+  };
+&lt;/script&gt;
+&lt;script src="https://yourdomain.com/ai-modal.js" defer&gt;&lt;/script&gt;</pre>
+      <button class="btn btn-outline" style="margin-top:12px" onclick="copyEmbed()">Copy Code</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DEMO_QUERIES = [
+  { q: 'how to speed up wordpress', count: 142 },
+  { q: 'best seo plugins', count: 98 },
+  { q: 'affiliate marketing guide', count: 87 },
+  { q: 'how to start a blog', count: 76 },
+  { q: 'email marketing tips', count: 65 },
+  { q: 'google analytics setup', count: 54 },
+  { q: 'wordpress security', count: 47 },
+  { q: 'content marketing strategy', count: 39 },
+  { q: 'keyword research tutorial', count: 33 },
+  { q: 'backlink building', count: 28 },
+];
+
+const DEMO_POSTS = [
+  { id: 1, title: 'Complete Beginner Guide to SEO', category: 'SEO', priority: 8 },
+  { id: 2, title: 'How to Speed Up WordPress in 2024', category: 'WordPress', priority: 9 },
+  { id: 3, title: 'Affiliate Marketing for Beginners', category: 'Monetization', priority: 5 },
+  { id: 4, title: 'Best WordPress Plugins 2024', category: 'WordPress', priority: 6 },
+  { id: 5, title: 'Email List Building Strategies', category: 'Marketing', priority: 4 },
+  { id: 6, title: 'How to Set Up Google Analytics', category: 'Analytics', priority: 3 },
+];
+
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'queries') loadQueries();
+  if (id === 'posts') loadPosts();
+}
+
+function loadQueries() {
+  const tbody = document.getElementById('queries-tbody');
+  const max = DEMO_QUERIES[0].count;
+  tbody.innerHTML = DEMO_QUERIES.map((q, i) => {
+    const vol = q.count > 80 ? 'high' : q.count > 40 ? 'med' : 'low';
+    const label = q.count > 80 ? '🔥 High' : q.count > 40 ? '📈 Med' : '💤 Low';
+    return `<tr>
+      <td style="color:var(--muted);font-family:'DM Mono',monospace">${i+1}</td>
+      <td>${q.q}</td>
+      <td style="font-family:'DM Mono',monospace">${q.count}</td>
+      <td><span class="badge ${vol}">${label}</span></td>
+      <td style="color:var(--muted);font-size:13px">${Math.floor(Math.random()*24)+1}h ago</td>
+    </tr>`;
+  }).join('');
+}
+
+function loadPosts() {
+  const tbody = document.getElementById('posts-tbody');
+  tbody.innerHTML = DEMO_POSTS.map(p => `
+    <tr>
+      <td>${p.title}</td>
+      <td><span class="badge high">${p.category}</span></td>
+      <td>
+        <input type="range" class="priority-slider" min="0" max="10" value="${p.priority}"
+          oninput="updatePriority(${p.id}, this.value)"
+          style="vertical-align:middle">
+        <span id="pri-${p.id}" style="font-family:'DM Mono',monospace;font-size:12px;margin-left:6px">${p.priority}</span>
+      </td>
+      <td><button class="btn btn-outline" style="padding:4px 12px;font-size:12px">View</button></td>
+    </tr>
+  `).join('');
+}
+
+function updatePriority(id, val) {
+  document.getElementById('pri-' + id).textContent = val;
+  // In production: call PATCH /api/admin/posts/:id/priority
+}
+
+// Bar chart
+function renderBarChart() {
+  const max = DEMO_QUERIES[0].count;
+  document.getElementById('bar-chart').innerHTML = DEMO_QUERIES.slice(0, 8).map(q => `
+    <div class="bar-row">
+      <div class="bar-label">${q.q}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(q.count/max)*100}%"></div></div>
+      <div class="bar-count">${q.count}</div>
+    </div>
+  `).join('');
+}
+
+function filterTable(input) {
+  const filter = input.value.toLowerCase();
+  document.querySelectorAll('#queries-tbody tr').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+  });
+}
+
+function syncPosts() {
+  alert('WordPress sync triggered! Posts will update in the background.');
+}
+
+function sendBroadcast(testOnly = false) {
+  const msg = document.getElementById('broadcast-msg').value;
+  if (!msg) return alert('Enter a message first');
+  alert(testOnly ? 'Test message sent to admin!' : 'Broadcast sent to Telegram channel!');
+}
+
+function copyEmbed() {
+  navigator.clipboard.writeText(`<!-- AI Assistant Modal -->
+<script>
+  window.AIAssistantConfig = {
+    apiEndpoint: 'https://yourdomain.com/api/ai-search',
+    siteUrl: 'https://yourdomain.com'
+  };
+<\/script>
+<script src="https://yourdomain.com/ai-modal.js" defer><\/script>`);
+  alert('Embed code copied to clipboard!');
+}
+
+function exportCSV() {
+  const rows = [['Query','Count','Last Seen']];
+  DEMO_QUERIES.forEach(q => rows.push([q.q, q.count, 'recent']));
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'ai-queries.csv'; a.click();
+}
+
+renderBarChart();
+loadQueries();
+loadPosts();
+</script>
+</body>
+</html>
