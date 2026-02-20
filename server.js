@@ -28,9 +28,13 @@ const redis  = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const db     = new Database('./assistant.db');
 
 // Telegram Bot (polling for dev, webhook for prod)
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
-  polling: process.env.NODE_ENV !== 'production'
-});
+let bot = null;
+if (process.env.TELEGRAM_BOT_TOKEN) {
+  bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
+    polling: process.env.NODE_ENV !== 'production'
+  });
+}
+
 const ADMIN_CHAT_ID  = process.env.TELEGRAM_ADMIN_CHAT_ID;
 const CHANNEL_ID     = process.env.TELEGRAM_CHANNEL_ID; // optional broadcast channel
 
@@ -82,7 +86,7 @@ async function syncWordPressPosts() {
 
     while (true) {
       const { data: posts } = await axios.get(`${wpBase}/posts`, {
-        params: { per_page: 100, page, _embed: 1 }
+        params: { per_page: 10, page }
       });
       if (!posts.length) break;
 
@@ -114,24 +118,22 @@ async function syncWordPressPosts() {
 // EMBEDDING GENERATION (Gemini text-embedding-3-small)
 // ─────────────────────────────────────────────
 async function semanticSearch(query, limit = 5) {
-  const cacheKey = `search:${query.toLowerCase().replace(/\s+/g, '_').slice(0, 80)}`;
-  const cached = await redis.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  try {
+    const posts = db.prepare('SELECT * FROM posts').all();
 
-  const posts = db.prepare('SELECT * FROM posts').all();
+    return posts
+      .filter(p =>
+        (p.title || '').toLowerCase().includes(query.toLowerCase()) ||
+        (p.excerpt || '').toLowerCase().includes(query.toLowerCase())
+      )
+      .slice(0, limit);
 
-  const scored = posts
-    .map(post => {
-      const text = (post.title + " " + post.excerpt).toLowerCase();
-      const score = text.includes(query.toLowerCase()) ? 0.9 : 0.3;
-      return { ...post, score };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-
-  await redis.setex(cacheKey, 3600, JSON.stringify(scored));
-  return scored;
+  } catch (e) {
+    console.log("Semantic fallback:", e.message);
+    return [];
+  }
 }
+
 
 // ─────────────────────────────────────────────
 // COSINE SIMILARITY
@@ -177,22 +179,34 @@ async function semanticSearch(query, limit = 5) {
 // AI ANSWER GENERATION (GPT-4o-mini for cost efficiency)
 // ─────────────────────────────────────────────
 async function generateAnswer(query, matchedPosts) {
-  const context = matchedPosts.slice(0, 3).map(p =>
-    `Article: "${p.title}"\nExcerpt: ${p.excerpt}`
-  ).join('\n\n');
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return "AI is not configured yet.";
+    }
 
-  const prompt = `
+    const context = (matchedPosts || [])
+      .slice(0, 3)
+      .map(p => `${p.title}: ${p.excerpt || ""}`)
+      .join("\n");
+
+    const prompt = `
 User question: ${query}
 
-Relevant content:
-${context || "No exact match"}
+Relevant articles:
+${context}
 
-Give short helpful answer and encourage reading articles.
+Answer briefly and suggest reading the articles.
 `;
 
-  const result = await geminiModel.generateContent(prompt);
-  return result.response.text();
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+
+  } catch (e) {
+    console.log("Gemini error:", e.message);
+    return "AI is temporarily unavailable. Please browse the articles.";
+  }
 }
+
 // ─────────────────────────────────────────────
 // API ROUTES
 // ─────────────────────────────────────────────
@@ -344,6 +358,10 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
 // START
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
+app.get('/', (req, res) => {
+  res.send('✅ AI Assistant API is running');
+});
+
 app.listen(PORT, () => {
   console.log(`✅ AI Assistant backend running on port ${PORT}`);
   // Run WP sync on startup, then every 6 hours
@@ -352,4 +370,3 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-[root@ip-172-31-9-156 topcashbackcard]#
